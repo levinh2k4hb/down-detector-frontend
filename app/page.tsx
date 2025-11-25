@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { websiteApi, type Website } from './api/websiteApi';
 import { adminApi, type Admin } from './api/adminApi';
+import { monitorApi } from './api/monitorApi';
+import PushNotificationSettings from './components/PushNotificationSettings';
 
 export default function Home() {
   const [websites, setWebsites] = useState<Website[]>([]);
@@ -15,10 +17,31 @@ export default function Home() {
   const [adminForm, setAdminForm] = useState({ name: '', phoneNumber: '', email: '' });
   const [editingAdmin, setEditingAdmin] = useState<Admin | null>(null);
 
+  // PWA Status
+  const [isStandalone, setIsStandalone] = useState(false);
+
   // Fetch data
   useEffect(() => {
     fetchWebsites();
     fetchAdmins();
+    
+    // Check if running as PWA
+    setIsStandalone(
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true
+    );
+    
+    // Check all websites every minute
+    const interval = setInterval(async () => {
+      try {
+        await monitorApi.checkAllWebsites();
+        fetchWebsites(); // Refresh to get updated status
+      } catch (error) {
+        console.error('Error checking websites:', error);
+      }
+    }, 10000); // 10000ms = 10 seconds
+
+    return () => clearInterval(interval);
   }, []);
 
   const fetchWebsites = async () => {
@@ -134,10 +157,19 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-white p-8">
       <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-2 gap-8">
-          {/* List Web Section */}
+        {/* PWA Status Indicator */}
+        <div className="mb-4 flex justify-between items-center">
+          <h1 className="text-3xl font-bold">Down Detector</h1>
+          {isStandalone && (
+            <div className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+              📱 PWA Mode
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">{/* List Web Section */}
           <div>
-            <h1 className="text-3xl font-bold mb-4">List Web</h1>
+            <h2 className="text-2xl font-bold mb-4">List Web</h2>
             <div className="mb-6 flex gap-2">
               <input
                 type="text"
@@ -160,22 +192,37 @@ export default function Home() {
                   key={website.id}
                   className="flex justify-between items-center text-xl py-2 border-b"
                 >
-                  {editingWebsite?.id === website.id ? (
-                    <input
-                      type="text"
-                      defaultValue={website.domain}
-                      onBlur={(e) => updateWebsite(website.id!, e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          updateWebsite(website.id!, e.currentTarget.value);
-                        }
-                      }}
-                      className="flex-1 px-2 py-1 border-2 border-blue-500"
-                      autoFocus
-                    />
-                  ) : (
-                    <span>{website.domain}</span>
-                  )}
+                  <div className="flex items-center gap-3 flex-1">
+                    {/* Status indicator */}
+                    <span 
+                      className={`w-3 h-3 rounded-full ${website.isActive ? 'bg-green-500' : 'bg-red-500'}`}
+                      title={website.isActive ? 'Đang hoạt động' : 'Không hoạt động'}
+                    ></span>
+                    
+                    {editingWebsite?.id === website.id ? (
+                      <input
+                        type="text"
+                        defaultValue={website.domain}
+                        onBlur={(e) => updateWebsite(website.id!, e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            updateWebsite(website.id!, e.currentTarget.value);
+                          }
+                        }}
+                        className="flex-1 px-2 py-1 border-2 border-blue-500"
+                        autoFocus
+                      />
+                    ) : (
+                      <div className="flex-1">
+                        <span className={website.isActive ? '' : 'text-red-600 font-semibold'}>
+                          {website.domain}
+                        </span>
+                        <span className={`ml-3 text-sm font-medium ${website.isActive ? 'text-green-600' : 'text-red-600'}`}>
+                          {website.isActive ? '🟢 Đang hoạt động' : '🔴 Không hoạt động'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <button
                       onClick={() => setEditingWebsite(website)}
@@ -197,7 +244,7 @@ export default function Home() {
 
           {/* Người phụ trách Section */}
           <div>
-            <h1 className="text-3xl font-bold mb-4">Người phụ trách</h1>
+            <h2 className="text-2xl font-bold mb-4">Người phụ trách</h2>
             <div className="mb-6">
               <button
                 onClick={() => openAdminPopup()}
@@ -236,6 +283,9 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {/* Push Notification Settings */}
+        <PushNotificationSettings admins={admins} />
       </div>
 
       {/* Admin Popup Modal */}
